@@ -1,4 +1,5 @@
 {
+  "private": true,
   "name": "express-openapi-decorators",
   "version": "0.1.0",
   "description": "Decorator-based Express controllers with OpenAPI specification generation.",
@@ -20,9 +21,45 @@
   },
   "license": "MIT",
   "author": "László BULIK",
-  "type": "commonjs",
-  "main": "index.js",
+  "type": "module",
+  "types": "./index.d.mts",
+  "main": "./index.mjs",
+  "exports": {
+    ".": {
+      "types": "./index.d.mts",
+      "default": "./index.mjs"
+    },
+    "./*.mjs": {
+      "types": "./*.d.mts",
+      "default": "./*.mjs"
+    },
+    "./*": {
+      "types": "./*.d.mts",
+      "default": "./*.mjs"
+    },
+    "./package.json": "./package.json"
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "clean": "node scripts/clean.mjs",
+    "watch": "node scripts/watch.mjs",
+    "build": "node scripts/build.mjs",
+    "publish": "node scripts/build.mjs && npm publish ./package",
+    "prepublishOnly": "echo Use 'npm run publish' to publish this package. & exit 1"
+  },
+  "dependencies": {
+    "glob": "^13.0.1",
+    "openapi3-ts": "^4.5.0",
+    "ts-json-schema-generator": "^2.5.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.2.1",
+    "chokidar": "^5.0.0",
+    "express": "^5.2.1",
+    "openapi3-ts": "^4.5.0",
+    "typescript": "^5.9.3"
+  },
+  "peerDependencies": {
+    "express": "^5.2.1"
   }
 }

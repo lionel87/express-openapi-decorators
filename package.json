@@ -1,0 +1,28 @@
+{
+  "name": "express-openapi-decorators",
+  "version": "0.1.0",
+  "description": "Decorator-based Express controllers with OpenAPI specification generation.",
+  "keywords": [
+    "express",
+    "openapi",
+    "swagger",
+    "controller",
+    "generator",
+    "decorator"
+  ],
+  "homepage": "https://github.com/lionel87/express-openapi-decorators#readme",
+  "bugs": {
+    "url": "https://github.com/lionel87/express-openapi-decorators/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lionel87/express-openapi-decorators.git"
+  },
+  "license": "MIT",
+  "author": "László BULIK",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}

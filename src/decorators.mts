@@ -243,6 +243,80 @@ export function requestBody(requestBody: RequestBodyMetadata) {
 	};
 }
 
+type ParameterMetadata = oas31.ParameterObject;
+const PARAMETER = Symbol('parameter');
+/**
+ * Defines an explicit OpenAPI parameter for the decorated target.
+ *
+ * - When applied to a method: registers a parameter for that operation.
+ * - When applied to a class: registers a default parameter for every operation in the class.
+ */
+export function parameter(parameter: ParameterMetadata) {
+	return function (
+		target: (new (...args: any[]) => any) | ((req: express.Request, res: express.Response) => void),
+		context: ClassDecoratorContext | ClassMethodDecoratorContext
+	) {
+		if (context.kind !== 'class' && context.kind !== 'method') throw new Error('This decorator can only be used on classes and class methods.');
+		if (!context.metadata) throw new Error('This decorator does not work without decorator metadata support.');
+
+		pushMetadataList(context.metadata, PARAMETER, context.kind === 'class' ? CLASS_METADATA : context.name, structuredClone(parameter));
+	};
+}
+
+/**
+ * Defines an OpenAPI query parameter for the decorated target.
+ */
+export function query(
+	name: string,
+	schema: oas31.SchemaObject | oas31.ReferenceObject | string,
+	description?: string,
+	required = false
+) {
+	return parameter({
+		name,
+		in: 'query',
+		required,
+		description,
+		schema: typeof schema === 'string' ? nameToSchemaRef(schema) : structuredClone(schema),
+	});
+}
+
+/**
+ * Defines an OpenAPI header parameter for the decorated target.
+ */
+export function header(
+	name: string,
+	schema: oas31.SchemaObject | oas31.ReferenceObject | string,
+	description?: string,
+	required = false
+) {
+	return parameter({
+		name,
+		in: 'header',
+		required,
+		description,
+		schema: typeof schema === 'string' ? nameToSchemaRef(schema) : structuredClone(schema),
+	});
+}
+
+/**
+ * Defines an OpenAPI cookie parameter for the decorated target.
+ */
+export function cookie(
+	name: string,
+	schema: oas31.SchemaObject | oas31.ReferenceObject | string,
+	description?: string,
+	required = false
+) {
+	return parameter({
+		name,
+		in: 'cookie',
+		required,
+		description,
+		schema: typeof schema === 'string' ? nameToSchemaRef(schema) : structuredClone(schema),
+	});
+}
+
 type ResponseCodeMetadata = number;
 type ResponseContentMetadata = oas31.ContentObject | Record<string, string> | string;
 type ResponseDescriptionMetadata = string;
@@ -422,12 +496,14 @@ export function getOpenAPISchema(
 		const summaryMap = md[SUMMARY] as Map<string | symbol, SummaryMetadata> | undefined;
 		const descriptionMap = md[DESCRIPTION] as Map<string | symbol, DescriptionMetadata> | undefined;
 		const requestBodyMap = md[REQUEST_BODY] as Map<string | symbol, RequestBodyMetadata> | undefined;
+		const parameterMap = md[PARAMETER] as Map<string | symbol, ParameterMetadata[]> | undefined;
 		const responseMap = md[RESPONSE] as Map<string | symbol, ResponseMetadata[]> | undefined;
 
 		const classPaths = pathMap?.get(CLASS_METADATA) ?? [''] as PathMetadata[];
 		const classMethod = methodMap?.get(CLASS_METADATA) ?? 'GET' as MethodMetadata;
 		const classTags = tagMap?.get(CLASS_METADATA) ?? [] as TagMetadata[];
 		const classRequestBody = requestBodyMap?.get(CLASS_METADATA) as RequestBodyMetadata | undefined;
+		const classParameters = parameterMap?.get(CLASS_METADATA) ?? [] as ParameterMetadata[];
 		const classReponses = responseMap?.get(CLASS_METADATA) ?? [] as ResponseMetadata[];
 
 		for (const [handlerName, methodPaths] of pathMap?.entries() ?? []) {
@@ -480,6 +556,9 @@ export function getOpenAPISchema(
 
 					const description = descriptionMap?.get(handlerName);
 					if (description) oaOperation.description = description;
+
+					const operationParameters = mergeParameters(classParameters, parameterMap?.get(handlerName) ?? []);
+					if (operationParameters.length) oaOperation.parameters = operationParameters;
 
 					const methodOperationId = operationIdMap?.get(handlerName);
 					if (methodOperationId) oaOperation.operationId = methodOperationId;
@@ -568,6 +647,33 @@ export function nameToSchemaRef(name: string): oas31.SchemaObject | oas31.Refere
 	return {
 		'$ref': '#/components/schemas/' + name
 	};
+}
+
+function pushMetadataList<T>(
+	metadata: DecoratorMetadataObject,
+	metadataKey: symbol,
+	entryKey: string | symbol,
+	value: T
+) {
+	metadata[metadataKey] ??= new Map<string | symbol, unknown>();
+	const map = metadata[metadataKey] as Map<string | symbol, unknown>;
+
+	let list = map.get(entryKey) as T[] | undefined;
+	if (!list) map.set(entryKey, list = []);
+	list.push(value);
+}
+
+function mergeParameters(
+	classParameters: ParameterMetadata[],
+	methodParameters: ParameterMetadata[]
+): oas31.ParameterObject[] {
+	const merged = new Map<string, oas31.ParameterObject>();
+
+	for (const currentParameter of [...classParameters, ...methodParameters]) {
+		merged.set(`${currentParameter.in}:${currentParameter.name}`, structuredClone(currentParameter));
+	}
+
+	return [...merged.values()];
 }
 
 function generateSchemaDefinitions(pattern: string | string[]): oas31.SchemasObject {

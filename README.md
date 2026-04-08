@@ -12,7 +12,7 @@ It targets modern Node.js + TypeScript setups (ESM) and relies on decorator meta
   `@path()`, `@method()`, `@middleware()`
 - OpenAPI decorators:  
   `@tag()`, `@summary()`, `@description()`,
-  `@operationId()`, `@requestBody()`, `@response()`
+  `@operationId()`, `@requestBody()`, `@parameter()`, `@query()`, `@header()`, `@cookie()`, `@response()`
 - Register controllers on an Express `app` or `router` via metadata
 - Generate OpenAPI document (`openapi.json`) from the same metadata
 - Optional schema generation for `components.schemas` using `ts-json-schema-generator`
@@ -23,7 +23,7 @@ It targets modern Node.js + TypeScript setups (ESM) and relies on decorator meta
 
 - Automatic inference of request/response types from handler signatures
 - Full OpenAPI surface area (security schemes, callbacks, links, deep parameter modeling, etc.)
-- Advanced param sources (query/header/cookie) beyond basic path-parameter emission
+- Automatic inference for advanced param sources beyond explicit decorator-based metadata
 - Runtime validation (this is routing + docs generation, not a validator)
 
 ## Requirements
@@ -54,7 +54,7 @@ A method becomes a route handler only if it has at least one method-level `@path
 
 ```ts
 import type express from 'express';
-import { controller, path, method, middleware, tag, summary, description, requestBody, response } from 'express-openapi-decorators';
+import { controller, path, method, middleware, tag, summary, description, requestBody, query, header, cookie, response } from 'express-openapi-decorators';
 
 @controller()
 @path('/users')
@@ -68,6 +68,9 @@ export class UserController {
   @path('/:id([0-9]+)')
   @summary('Get user by id')
   @description('Returns a user by id.')
+  @query('includePosts', { type: 'boolean' }, 'Include authored posts')
+  @header('x-request-id', { type: 'string' }, 'Request correlation id')
+  @cookie('session', { type: 'string' }, 'Session token')
   @response(200, 'User')
   @response(404)
   async getUserById(req: express.Request, res: express.Response) {
@@ -251,6 +254,54 @@ class UserController {
 ```ts
 @requestBody('CreateNotebookRequest')
 @requestBody('Notebook[]')
+```
+
+### `@query(name: string, schemaOrRef: SchemaObject | ReferenceObject | string, description?: string, required = false)`
+
+* Method or class
+* Class-level query parameters are applied to all operations in the class
+* Method-level query parameters override class-level ones with the same name
+* `string` shorthand resolves to `#/components/schemas/<name>`
+
+```ts
+@query('limit', { type: 'integer', minimum: 1, maximum: 100 }, 'Page size')
+@query('filter', 'UserFilter', 'Optional filter')
+```
+
+### `@header(name: string, schemaOrRef: SchemaObject | ReferenceObject | string, description?: string, required = false)`
+
+* Method or class
+* Emits an OpenAPI parameter with `in: 'header'`
+* Method-level header parameters override class-level ones with the same name
+
+```ts
+@header('x-request-id', { type: 'string' }, 'Request correlation id', true)
+```
+
+### `@cookie(name: string, schemaOrRef: SchemaObject | ReferenceObject | string, description?: string, required = false)`
+
+* Method or class
+* Emits an OpenAPI parameter with `in: 'cookie'`
+* Method-level cookie parameters override class-level ones with the same name
+
+```ts
+@cookie('session', { type: 'string' }, 'Session token')
+```
+
+### `@parameter(param: ParameterObject)`
+
+* Method or class
+* Accepts a full OpenAPI `ParameterObject`
+* Method-level parameters override class-level ones with the same `(in, name)` pair
+
+```ts
+@parameter({
+  name: 'traceId',
+  in: 'header',
+  required: false,
+  description: 'Trace identifier',
+  schema: { type: 'string' },
+})
 ```
 
 ### `@response(code: number, content?, description?, headers?)`

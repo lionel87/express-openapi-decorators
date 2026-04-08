@@ -67,3 +67,40 @@ test('getOpenAPISchema hoists indirectly recursive definitions into separate com
 		rmSync(dir, { recursive: true, force: true });
 	}
 });
+
+test('getOpenAPISchema reuses matching top-level schemas instead of hoisting duplicates', () => {
+	const dir = createTempSchemaDir({
+		'WorkspaceEntry.d.mts': [
+			'export interface WorkspaceEntry {',
+			'\tchildren?: WorkspaceEntry[];',
+			'}',
+		].join('\n'),
+		'WorkspaceTreeResponse.d.mts': [
+			'interface WorkspaceEntry {',
+			'\tchildren?: WorkspaceEntry[];',
+			'}',
+			'export interface WorkspaceTreeResponse {',
+			'\tentries: WorkspaceEntry[];',
+			'}',
+		].join('\n'),
+	});
+
+	try {
+		const openapi = getOpenAPISchema({
+			openapi: '3.1.0',
+			info: { title: 'Test', version: '1.0.0' },
+			paths: {},
+		}, [], join(dir, '*.d.mts'));
+
+		assert.deepEqual(Object.keys(openapi.components.schemas).sort(), [
+			'WorkspaceEntry',
+			'WorkspaceTreeResponse',
+		]);
+		assert.equal(openapi.components.schemas.WorkspaceEntry.properties.children.items.$ref, '#/components/schemas/WorkspaceEntry');
+		assert.equal(openapi.components.schemas.WorkspaceTreeResponse.properties.entries.items.$ref, '#/components/schemas/WorkspaceEntry');
+		assert.equal(openapi.components.schemas.WorkspaceEntry_WorkspaceEntry, undefined);
+		assert.equal(openapi.components.schemas.WorkspaceTreeResponse_WorkspaceEntry, undefined);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});

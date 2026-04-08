@@ -634,7 +634,7 @@ function generateSchemaDefinitions(pattern: string | string[]): oas31.SchemasObj
 		return recursive;
 	};
 
-	const fixSchema = (obj: object, defs: Record<string, any>, schemaName: string, hoistedRefs: Map<string, string>, seen = new WeakSet<object>()) => {
+	const fixSchema = (obj: object, defs: Record<string, any>, schemaName: string, topLevelSchemaNames: Set<string>, hoistedRefs: Map<string, string>, seen = new WeakSet<object>()) => {
 		if (seen.has(obj)) {
 			return;
 		}
@@ -652,17 +652,19 @@ function generateSchemaDefinitions(pattern: string | string[]): oas31.SchemasObj
 						const refName = target.$ref.replace('#/definitions/', '');
 						if (refName === schemaName) {
 							obj.splice(i, 1, nameToSchemaRef(schemaName));
+						} else if (topLevelSchemaNames.has(refName)) {
+							obj.splice(i, 1, nameToSchemaRef(refName));
 						} else if (hoistedRefs.has(refName)) {
 							obj.splice(i, 1, nameToSchemaRef(hoistedRefs.get(refName)!));
 						} else {
 							const ref = defs[refName];
 							obj.splice(i, 1, ref);
 							if (typeof ref === 'object' && ref !== null) {
-								fixSchema(ref, defs, schemaName, hoistedRefs, seen);
+								fixSchema(ref, defs, schemaName, topLevelSchemaNames, hoistedRefs, seen);
 							}
 						}
 					} else {
-						fixSchema(target, defs, schemaName, hoistedRefs, seen);
+						fixSchema(target, defs, schemaName, topLevelSchemaNames, hoistedRefs, seen);
 					}
 				}
 			}
@@ -678,17 +680,19 @@ function generateSchemaDefinitions(pattern: string | string[]): oas31.SchemasObj
 						const refName = target.$ref.replace('#/definitions/', '');
 						if (refName === schemaName) {
 							(obj as any)[key] = nameToSchemaRef(schemaName);
+						} else if (topLevelSchemaNames.has(refName)) {
+							(obj as any)[key] = nameToSchemaRef(refName);
 						} else if (hoistedRefs.has(refName)) {
 							(obj as any)[key] = nameToSchemaRef(hoistedRefs.get(refName)!);
 						} else {
 							const ref = defs[refName];
 							(obj as any)[key] = ref;
 							if (typeof ref === 'object' && ref !== null) {
-								fixSchema(ref, defs, schemaName, hoistedRefs, seen);
+								fixSchema(ref, defs, schemaName, topLevelSchemaNames, hoistedRefs, seen);
 							}
 						}
 					} else {
-						fixSchema(target, defs, schemaName, hoistedRefs, seen);
+						fixSchema(target, defs, schemaName, topLevelSchemaNames, hoistedRefs, seen);
 					}
 				}
 			}
@@ -698,6 +702,12 @@ function generateSchemaDefinitions(pattern: string | string[]): oas31.SchemasObj
 	const combinedSchemas: any = {};
 
 	const declarationFiles = globSync(pattern, { absolute: true });
+	const topLevelSchemaNames = new Set(declarationFiles.map((file) => {
+		const filename = basename(file);
+		const dotPos = filename.indexOf('.');
+		return dotPos < 0 ? filename : filename.substring(0, dotPos);
+	}));
+
 	for (const file of declarationFiles) {
 		const filename = basename(file);
 		const dotPos = filename.indexOf('.');
@@ -714,14 +724,16 @@ function generateSchemaDefinitions(pattern: string | string[]): oas31.SchemasObj
 				const recursiveDefinitions = getRecursiveDefinitions(schema.definitions);
 				const hoistedRefs = new Map<string, string>();
 				for (const defName of recursiveDefinitions) {
-					hoistedRefs.set(defName, filenameWithoutExt + '_' + defName);
+					if (!topLevelSchemaNames.has(defName)) {
+						hoistedRefs.set(defName, filenameWithoutExt + '_' + defName);
+					}
 				}
 
-				fixSchema(schema, schema.definitions, filenameWithoutExt, hoistedRefs);
+				fixSchema(schema, schema.definitions, filenameWithoutExt, topLevelSchemaNames, hoistedRefs);
 				for (const [defName, hoistedName] of hoistedRefs) {
 					const hoistedSchema = structuredClone(schema.definitions[defName]);
 					if (typeof hoistedSchema === 'object' && hoistedSchema !== null) {
-						fixSchema(hoistedSchema, schema.definitions, filenameWithoutExt, hoistedRefs);
+						fixSchema(hoistedSchema, schema.definitions, filenameWithoutExt, topLevelSchemaNames, hoistedRefs);
 						delete (hoistedSchema as any).$schema;
 					}
 					combinedSchemas[hoistedName] = hoistedSchema;

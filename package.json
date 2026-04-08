@@ -43,6 +43,7 @@
     "clean": "node scripts/clean.mjs",
     "watch": "node scripts/watch.mjs",
     "build": "node scripts/build.mjs",
+    "test": "npm run build && node --test",
     "publish": "node scripts/build.mjs && npm publish ./package",
     "prepublishOnly": "echo Use 'npm run publish' to publish this package. & exit 1"
   },

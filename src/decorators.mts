@@ -212,6 +212,32 @@ export function operationId(operationId: OperationIdMetadata) {
 	};
 }
 
+type DeprecatedMetadata = true;
+const DEPRECATED = Symbol('deprecated');
+/**
+ * Marks the decorated target as deprecated in the generated OpenAPI document.
+ *
+ * - When applied to a method: marks that operation as `deprecated: true`.
+ * - When applied to a class: marks every operation in that controller as `deprecated: true`.
+ */
+export function deprecated() {
+	return function (
+		target: (new (...args: any[]) => any) | ((req: express.Request, res: express.Response) => void),
+		context: ClassDecoratorContext | ClassMethodDecoratorContext
+	) {
+		if (context.kind !== 'class' && context.kind !== 'method') throw new Error('This decorator can only be used on classes and class methods.');
+		if (!context.metadata) throw new Error('This decorator does not work without decorator metadata support.');
+
+		context.metadata[DEPRECATED] ??= new Map<string | symbol, unknown>();
+		const map = context.metadata[DEPRECATED] as Map<string | symbol, unknown>;
+		const key = context.kind === 'class' ? CLASS_METADATA : context.name;
+
+		if (map.has(key)) throw new Error('This decorator may be applied at most once per target.');
+
+		map.set(key, true);
+	};
+}
+
 type RequestBodyMetadata = oas31.RequestBodyObject | string;
 const REQUEST_BODY = Symbol('requestBody');
 /**
@@ -493,6 +519,7 @@ export function getOpenAPISchema(
 		const methodMap = md[METHOD] as Map<string | symbol, MethodMetadata> | undefined;
 		const tagMap = md[TAG] as Map<string | symbol, TagMetadata[]> | undefined;
 		const operationIdMap = md[OPERATION_ID] as Map<string | symbol, OperationIdMetadata> | undefined;
+		const deprecatedMap = md[DEPRECATED] as Map<string | symbol, DeprecatedMetadata> | undefined;
 		const summaryMap = md[SUMMARY] as Map<string | symbol, SummaryMetadata> | undefined;
 		const descriptionMap = md[DESCRIPTION] as Map<string | symbol, DescriptionMetadata> | undefined;
 		const requestBodyMap = md[REQUEST_BODY] as Map<string | symbol, RequestBodyMetadata> | undefined;
@@ -502,6 +529,7 @@ export function getOpenAPISchema(
 		const classPaths = pathMap?.get(CLASS_METADATA) ?? [''] as PathMetadata[];
 		const classMethod = methodMap?.get(CLASS_METADATA) ?? 'GET' as MethodMetadata;
 		const classTags = tagMap?.get(CLASS_METADATA) ?? [] as TagMetadata[];
+		const classDeprecated = deprecatedMap?.get(CLASS_METADATA) ?? false;
 		const classRequestBody = requestBodyMap?.get(CLASS_METADATA) as RequestBodyMetadata | undefined;
 		const classParameters = parameterMap?.get(CLASS_METADATA) ?? [] as ParameterMetadata[];
 		const classReponses = responseMap?.get(CLASS_METADATA) ?? [] as ResponseMetadata[];
@@ -556,6 +584,8 @@ export function getOpenAPISchema(
 
 					const description = descriptionMap?.get(handlerName);
 					if (description) oaOperation.description = description;
+
+					if (classDeprecated || deprecatedMap?.get(handlerName)) oaOperation.deprecated = true;
 
 					const operationParameters = mergeParameters(classParameters, parameterMap?.get(handlerName) ?? []);
 					if (operationParameters.length) oaOperation.parameters = operationParameters;

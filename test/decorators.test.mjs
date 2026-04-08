@@ -10,6 +10,7 @@ const {
 	summary,
 	description,
 	operationId,
+	deprecated,
 	parameter,
 	requestBody,
 	header,
@@ -95,6 +96,7 @@ test('getOpenAPISchema generates operations, parameters, bodies and responses', 
 	applyMethodDecorator(PetController, 'create', summary('Create pet'));
 	applyMethodDecorator(PetController, 'create', description('Creates a pet.'));
 	applyMethodDecorator(PetController, 'create', operationId('createPet'));
+	applyMethodDecorator(PetController, 'create', deprecated());
 	applyMethodDecorator(PetController, 'create', parameter({
 		name: 'traceId',
 		in: 'header',
@@ -120,6 +122,7 @@ test('getOpenAPISchema generates operations, parameters, bodies and responses', 
 	assert.equal(operation.summary, 'Create pet');
 	assert.equal(operation.description, 'Creates a pet.');
 	assert.equal(operation.operationId, 'createPet');
+	assert.equal(operation.deprecated, true);
 	assert.deepEqual(operation.parameters, [
 		{ name: 'traceId', in: 'header', required: true, description: 'Request trace identifier', schema: { type: 'string', minLength: 8 } },
 		{ name: 'locale', in: 'query', required: false, description: 'Response locale', schema: { type: 'string', enum: ['en', 'hu'] } },
@@ -169,4 +172,37 @@ test('getOpenAPISchema throws on duplicate method/path combinations', () => {
 		info: { title: 'Test', version: '1.0.0' },
 		paths: {},
 	}, [new FirstController(), new SecondController()]), /Duplicate path definition/);
+});
+
+test('getOpenAPISchema applies class-level deprecation to all operations', () => {
+	class LegacyController {
+		list() {}
+		read() {}
+	}
+
+	applyClassDecorator(LegacyController, path('/legacy'));
+	applyClassDecorator(LegacyController, deprecated());
+	applyMethodDecorator(LegacyController, 'list', path('/'));
+	applyMethodDecorator(LegacyController, 'read', path('/:id'));
+
+	const openapi = getOpenAPISchema({
+		openapi: '3.1.0',
+		info: { title: 'Test', version: '1.0.0' },
+		paths: {},
+	}, [new LegacyController()]);
+
+	assert.equal(openapi.paths['/legacy/'].get.deprecated, true);
+	assert.equal(openapi.paths['/legacy/{id}'].get.deprecated, true);
+});
+
+test('deprecated decorator rejects duplicate application on the same target', () => {
+	class LegacyController {
+		list() {}
+	}
+
+	applyClassDecorator(LegacyController, deprecated());
+	assert.throws(() => applyClassDecorator(LegacyController, deprecated()), /at most once per target/);
+
+	applyMethodDecorator(LegacyController, 'list', deprecated());
+	assert.throws(() => applyMethodDecorator(LegacyController, 'list', deprecated()), /at most once per target/);
 });

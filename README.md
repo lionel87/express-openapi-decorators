@@ -12,7 +12,7 @@ It targets modern Node.js + TypeScript setups (ESM) and relies on decorator meta
   `@path()`, `@method()`, `@middleware()`
 - OpenAPI decorators:  
   `@tag()`, `@summary()`, `@description()`,
-  `@operationId()`, `@requestBody()`, `@parameter()`, `@query()`, `@header()`, `@cookie()`, `@response()`
+  `@operationId()`, `@deprecated()`, `@requestBody()`, `@parameter()`, `@query()`, `@header()`, `@cookie()`, `@response()`
 - Register controllers on an Express `app` or `router` via metadata
 - Generate OpenAPI document (`openapi.json`) from the same metadata
 - Optional schema generation for `components.schemas` using `ts-json-schema-generator`
@@ -54,7 +54,7 @@ A method becomes a route handler only if it has at least one method-level `@path
 
 ```ts
 import type express from 'express';
-import { controller, path, method, middleware, tag, summary, description, requestBody, query, header, cookie, response } from 'express-openapi-decorators';
+import { controller, path, method, middleware, tag, summary, description, deprecated, requestBody, query, header, cookie, response } from 'express-openapi-decorators';
 
 @controller()
 @path('/users')
@@ -68,6 +68,7 @@ export class UserController {
   @path('/:id([0-9]+)')
   @summary('Get user by id')
   @description('Returns a user by id.')
+  @deprecated()
   @query('includePosts', { type: 'boolean' }, 'Include authored posts')
   @header('x-request-id', { type: 'string' }, 'Request correlation id')
   @cookie('session', { type: 'string' }, 'Session token')
@@ -244,6 +245,20 @@ class UserController {
 * Method only
 * Sets OpenAPI `operationId`
 * If omitted, the method name is used (when available)
+
+### `@deprecated()`
+
+* Class or method
+* Emits OpenAPI `deprecated: true` on generated operations
+* On a class, applies to every operation in the controller
+
+```ts
+@deprecated()
+class LegacyController {
+  @path('/old-endpoint')
+  oldEndpoint(req: express.Request, res: express.Response) {}
+}
+```
 
 ### `@requestBody(body: RequestBodyObject | string)`
 

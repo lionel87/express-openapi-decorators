@@ -109,7 +109,7 @@ export class OpenAPI {
 
 		controllers = [
 			...(controllers ?? []),
-			controllerClasses.map(Cls => {
+			...controllerClasses.map(Cls => {
 				const factory = controllerFactoryMap?.get(Cls);
 				return factory ? factory(Cls) : new Cls();
 			}),

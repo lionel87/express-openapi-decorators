@@ -571,20 +571,98 @@ export function nameToSchemaRef(name: string): oas31.SchemaObject | oas31.Refere
 }
 
 function generateSchemaDefinitions(pattern: string | string[]): oas31.SchemasObject {
-	const fixSchema = (obj: object, defs: any) => {
+	const getDefinitionRefs = (obj: unknown, refs = new Set<string>(), seen = new WeakSet<object>()) => {
+		if (typeof obj !== 'object' || obj === null || seen.has(obj)) {
+			return refs;
+		}
+		seen.add(obj);
+
+		if (Array.isArray(obj)) {
+			for (const item of obj) {
+				getDefinitionRefs(item, refs, seen);
+			}
+			return refs;
+		}
+
+		if ((obj as any).$ref?.startsWith?.('#/definitions/')) {
+			refs.add((obj as any).$ref.replace('#/definitions/', ''));
+		}
+
+		for (const key of Object.keys(obj)) {
+			getDefinitionRefs((obj as any)[key], refs, seen);
+		}
+		return refs;
+	};
+
+	const getRecursiveDefinitions = (defs: Record<string, any>) => {
+		const edges = new Map<string, Set<string>>();
+		for (const name of Object.keys(defs)) {
+			edges.set(name, new Set([...getDefinitionRefs(defs[name])].filter((ref) => ref in defs)));
+		}
+
+		const recursive = new Set<string>();
+		const visited = new Set<string>();
+		const path: string[] = [];
+		const pathIndex = new Map<string, number>();
+
+		const visit = (name: string) => {
+			const currentPathIndex = pathIndex.get(name);
+			if (currentPathIndex !== undefined) {
+				for (let i = currentPathIndex; i < path.length; i++) {
+					recursive.add(path[i]);
+				}
+				recursive.add(name);
+				return;
+			}
+			if (visited.has(name)) {
+				return;
+			}
+
+			visited.add(name);
+			pathIndex.set(name, path.length);
+			path.push(name);
+			for (const ref of edges.get(name) ?? []) {
+				visit(ref);
+			}
+			path.pop();
+			pathIndex.delete(name);
+		};
+
+		for (const name of edges.keys()) {
+			visit(name);
+		}
+		return recursive;
+	};
+
+	const fixSchema = (obj: object, defs: Record<string, any>, schemaName: string, hoistedRefs: Map<string, string>, seen = new WeakSet<object>()) => {
+		if (seen.has(obj)) {
+			return;
+		}
+		seen.add(obj);
+
 		if (Array.isArray(obj)) {
 			for (let i = 0; i < obj.length; i++) {
 				const target = obj[i];
 				if (typeof target === 'object' && target !== null) {
+					if ('const' in target) {
+						target.enum = [target.const];
+						delete target.const;
+					}
 					if (target.$ref?.startsWith?.('#/definitions/')) {
-						const ref = defs[target.$ref.replace('#/definitions/', '')];
-						obj.splice(i, 1, ref);
-					} else {
-						if ('const' in target) {
-							target.enum = [target.const];
-							delete target.const;
+						const refName = target.$ref.replace('#/definitions/', '');
+						if (refName === schemaName) {
+							obj.splice(i, 1, nameToSchemaRef(schemaName));
+						} else if (hoistedRefs.has(refName)) {
+							obj.splice(i, 1, nameToSchemaRef(hoistedRefs.get(refName)!));
+						} else {
+							const ref = defs[refName];
+							obj.splice(i, 1, ref);
+							if (typeof ref === 'object' && ref !== null) {
+								fixSchema(ref, defs, schemaName, hoistedRefs, seen);
+							}
 						}
-						fixSchema(target, defs);
+					} else {
+						fixSchema(target, defs, schemaName, hoistedRefs, seen);
 					}
 				}
 			}
@@ -592,15 +670,25 @@ function generateSchemaDefinitions(pattern: string | string[]): oas31.SchemasObj
 			for (const key of Object.keys(obj)) {
 				const target = (obj as any)[key];
 				if (typeof target === 'object' && target !== null) {
+					if ('const' in target) {
+						target.enum = [target.const];
+						delete target.const;
+					}
 					if (target.$ref?.startsWith?.('#/definitions/')) {
-						const ref = defs[target.$ref.replace('#/definitions/', '')];
-						(obj as any)[key] = ref;
-					} else {
-						if ('const' in target) {
-							target.enum = [target.const];
-							delete target.const;
+						const refName = target.$ref.replace('#/definitions/', '');
+						if (refName === schemaName) {
+							(obj as any)[key] = nameToSchemaRef(schemaName);
+						} else if (hoistedRefs.has(refName)) {
+							(obj as any)[key] = nameToSchemaRef(hoistedRefs.get(refName)!);
+						} else {
+							const ref = defs[refName];
+							(obj as any)[key] = ref;
+							if (typeof ref === 'object' && ref !== null) {
+								fixSchema(ref, defs, schemaName, hoistedRefs, seen);
+							}
 						}
-						fixSchema(target, defs);
+					} else {
+						fixSchema(target, defs, schemaName, hoistedRefs, seen);
 					}
 				}
 			}
@@ -623,7 +711,21 @@ function generateSchemaDefinitions(pattern: string | string[]): oas31.SchemasObj
 
 		if (schema) {
 			if (schema.definitions) {
-				fixSchema(schema, schema.definitions);
+				const recursiveDefinitions = getRecursiveDefinitions(schema.definitions);
+				const hoistedRefs = new Map<string, string>();
+				for (const defName of recursiveDefinitions) {
+					hoistedRefs.set(defName, filenameWithoutExt + '_' + defName);
+				}
+
+				fixSchema(schema, schema.definitions, filenameWithoutExt, hoistedRefs);
+				for (const [defName, hoistedName] of hoistedRefs) {
+					const hoistedSchema = structuredClone(schema.definitions[defName]);
+					if (typeof hoistedSchema === 'object' && hoistedSchema !== null) {
+						fixSchema(hoistedSchema, schema.definitions, filenameWithoutExt, hoistedRefs);
+						delete (hoistedSchema as any).$schema;
+					}
+					combinedSchemas[hoistedName] = hoistedSchema;
+				}
 				delete schema.definitions;
 			}
 			delete schema.$schema;

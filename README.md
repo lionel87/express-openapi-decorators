@@ -306,7 +306,7 @@ This will merge into:
 
 Notes:
 
-* The current implementation rewrites `const` to `enum` and inlines internal `#/definitions/*` refs.
+* The current implementation rewrites `const` to `enum` and inlines internal `#/definitions/*` refs, except self-references which stay as component `$ref`s.
 * This is best-effort; complex TS types may need tweaks.
 
 ## How routing is discovered

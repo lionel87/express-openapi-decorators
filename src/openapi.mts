@@ -9,26 +9,49 @@ export class OpenAPI {
 
 	async initialize({
 		autoscanControllersGlob,
-		controllerFactoryMap,
+		autoloadControllers,
+		controllers,
 		controllerClasses,
+		controllerFactoryMap,
 		schemaComponentsGlob,
 		registrar,
 		autoregGetOpenApiSpecOp = true,
 		baseOpenAPISchema,
+		silent = false,
 	}: {
 		/**
 		 * Glob pattern(s) to load controller modules (side-effect import).
 		 *
+		 * Implies `autoloadControllers: true`.
+		 *
 		 * Use this only when you rely on `@controller()` auto-registration.
-		 * If you provide `controllerFactoryMap`, controller modules are already imported
-		 * and autoscan is unnecessary.
 		 */
 		autoscanControllersGlob?: string | string[];
+		/**
+		 * Captures `@controller()` decorated classes.
+		 *
+		 * Does NOT import any module, just collects already loaded and decorated ones.
+		 * If you want auto-importing, use `autoscanControllersGlob` option.
+		 */
+		autoloadControllers?: boolean;
+		/**
+		 * Explicit list of controller instances to register.
+		 *
+		 * Provide this if you want full control over which controllers are loaded/registered
+		 * (i.e. do not rely on `@controller()` auto-registration / scanning).
+		 *
+		 * Note: providing this typically implies controller modules are already imported,
+		 * so autoscan is usually unnecessary.
+		 */
+		controllers?: object[];
 		/**
 		 * Explicit list of controller classes to register.
 		 *
 		 * Provide this if you want full control over which controllers are loaded/registered
 		 * (i.e. do not rely on `@controller()` auto-registration / scanning).
+		 *
+		 * Note: providing this typically implies controller modules are already imported,
+		 * so autoscan is usually unnecessary.
 		 */
 		controllerClasses?: (new (...args: any[]) => any)[];
 		/**
@@ -67,31 +90,40 @@ export class OpenAPI {
 		 * Paths/components discovered from controllers and schema components are merged into this object.
 		 */
 		baseOpenAPISchema: oas31.OpenAPIObject;
+		/**
+		 * Do not print log messages.
+		 */
+		silent?: boolean;
 	}) {
 		if (!registrar) {
 			registrar = express.Router();
 		}
 
-		if (!controllerClasses) {
-			controllerClasses = autoscanControllersGlob
-				? await scanControllerClasses(autoscanControllersGlob)
-				: getControllerClasses();
+		controllerClasses = [...(controllerClasses ?? [])];
+
+		if (autoscanControllersGlob) {
+			controllerClasses.push(...await scanControllerClasses(autoscanControllersGlob));
+		} else if (autoloadControllers) {
+			controllerClasses.push(...getControllerClasses());
 		}
 
-		const controllers = controllerClasses.map(Cls => {
-			const factory = controllerFactoryMap?.get(Cls);
-			return factory ? factory(Cls) : new Cls();
-		});
+		controllers = [
+			...(controllers ?? []),
+			controllerClasses.map(Cls => {
+				const factory = controllerFactoryMap?.get(Cls);
+				return factory ? factory(Cls) : new Cls();
+			}),
+		];
 
 		if (autoregGetOpenApiSpecOp) controllers.unshift(this);
 
-		registerControllers(registrar, controllers).forEach(x => console.log(`Registered ${x.method} ${x.path}`));
+		registerControllers(registrar, controllers).forEach(x => !silent && console.log(`Registered ${x.method} ${x.path}`));
 
 		if (process.argv[2] === '--generate-openapi') {
-			console.log('Generating OpenAPI documentation...');
+			!silent && console.log('Generating OpenAPI documentation...');
 			try {
 				const openapi = getOpenAPISchema(baseOpenAPISchema, controllers, schemaComponentsGlob);
-				console.log('Writing openapi.json...');
+				!silent && console.log('Writing openapi.json...');
 				fs.writeFileSync('openapi.json', JSON.stringify(openapi));
 			} catch (error) {
 				console.error(error);

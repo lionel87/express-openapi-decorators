@@ -93,12 +93,11 @@ export class UserController {
 import express from 'express';
 import 'express-openapi-decorators/symbol-metadata-polyfill.mjs';
 import { OpenAPI } from 'express-openapi-decorators';
-import { UserController } from './UserController.mjs';
 
 const app = express();
 
 const router = await new OpenAPI().initialize({
-	controllersGlob: 'build/**/*Controller.mjs',
+	autoscanControllersGlob: 'build/**/*Controller.mjs',
 	schemaComponentsGlob: 'src/**/http-dto/*.d.mts',
 	baseOpenAPISchema: {
 		openapi: '3.0.0',
@@ -121,6 +120,39 @@ app.listen(80, () => {
   console.log(`HTTP Server running on port 80`);
 });
 ```
+
+`initialize()` registers controllers onto the provided `registrar`, or creates and returns an internal `express.Router()` when `registrar` is omitted.
+
+### `OpenAPI.initialize()` options
+
+`OpenAPI.initialize()` accepts these options:
+
+* `autoscanControllersGlob?: string | string[]`
+  Imports matching controller modules and collects `@controller()`-decorated classes.
+* `autoloadControllers?: boolean`
+  Collects already-loaded `@controller()` classes without importing modules.
+* `controllers?: object[]`
+  Explicit controller instances to register.
+* `controllerClasses?: (new (...args: any[]) => any)[]`
+  Explicit controller classes to instantiate and register.
+* `controllerFactoryMap?: Map<(new (...args: any[]) => any), (Cls: new (...args: any[]) => any) => any>`
+  Optional factories for custom controller instantiation.
+* `schemaComponentsGlob?: string | string[]`
+  Glob(s) for schema component modules used during OpenAPI generation.
+* `registrar?: express.Application | express.Router`
+  Express app/router to register routes on.
+* `autoregGetOpenApiSpecOp?: boolean`
+  When `true` (default), also registers `GET /openapi.json`.
+* `baseOpenAPISchema: oas31.OpenAPIObject`
+  Base OpenAPI document to extend.
+* `silent?: boolean`
+  Suppresses registration and generation logs.
+
+Typical usage patterns:
+
+* Use `autoscanControllersGlob` when controller modules should be imported automatically.
+* Use `autoloadControllers` when modules are already imported elsewhere and you only want to collect decorated classes.
+* Use `controllers`, `controllerClasses`, and `controllerFactoryMap` when you want explicit control over registration and instantiation.
 
 ## OpenAPI generation
 
@@ -148,17 +180,17 @@ const baseOpenAPISchema: oas31.OpenAPIObject = {
 
 ### Generate `openapi.json`
 
-Using the high-level `OpenAPI.initialize()` method, an `openapi.json` is automatically
-generated when you start your server with `--generate-openapi` command-line argument:
+Using the high-level `OpenAPI.initialize()` method, an `openapi.json` is generated when you start your server with the `--generate-openapi` command-line argument:
 
 ```sh
 node server.mjs --generate-openapi
 ```
 
-When the file is generated the server exits. This step usually required only once per build/deploy.
+When this flag is present, the library generates `openapi.json` from the configured controllers and base schema, then exits the process. This step is usually needed only once per build/deploy.
 
 * `openapi.json` will be written to the current working directory
-* if you enabled auto-serving, `GET /openapi.json` can serve it
+* if `autoregGetOpenApiSpecOp` is enabled, `GET /openapi.json` serves that generated file
+* if the file does not exist yet, the endpoint responds with `500`
 
 ## Decorators
 
